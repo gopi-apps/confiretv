@@ -9,6 +9,11 @@ firetv:
   port: 5555
   # How often to poll for the active app (seconds). 30 is a good default.
   poll_interval: 30
+  # Automatically scan your WiFi network when the TV's IP changes (e.g. after restart).
+  # When enabled, the poller scans your /24 subnet after 3 failed connection attempts,
+  # finds the Fire TV at its new IP, and updates this config file automatically.
+  # Recommended: true. Set to false if you use DHCP reservation on your router.
+  auto_discover: true
 
 child:
   name: "Child Name"

@@ -8,11 +8,14 @@ daily limits by force-stopping apps that exceed their quota.
 Run directly:  python -m monitor.adb_poller
 """
 
+import concurrent.futures
+import ipaddress
 import logging
 import os
 import platform
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -158,6 +161,98 @@ def connect(ip: str, port: int) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Auto-discovery — finds Fire TV on the subnet when the IP has changed
+# ---------------------------------------------------------------------------
+
+def _derive_subnet(ip: str) -> str:
+    """Derive /24 subnet from an IP. e.g. '192.168.1.15' → '192.168.1.0/24'"""
+    parts = ip.split(".")
+    return f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+
+
+def _port_open(ip: str, port: int, timeout: float = 0.4) -> bool:
+    """Return True if TCP port is open on the given IP."""
+    try:
+        with socket.create_connection((ip, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _is_firetv(ip: str, port: int) -> bool:
+    """
+    Connect ADB and verify the device is a Fire TV by checking for
+    the Fire TV launcher package.
+    """
+    out = _adb_connect_cmd(ip, port)
+    if not out or "connected" not in out.lower():
+        return False
+    result = adb(ip, port, "shell", "pm", "list", "packages", "com.amazon.tv.launcher")
+    return bool(result and "com.amazon.tv.launcher" in result)
+
+
+def discover_firetv(known_ip: str, port: int = 5555) -> Optional[str]:
+    """
+    Scan the local subnet for a Fire TV Stick with ADB port open.
+    Returns the IP address of the first Fire TV found, or None.
+
+    Uses the /24 subnet derived from known_ip as the search range.
+    Scanning is done in parallel (50 threads) so it completes in ~5 seconds.
+    """
+    subnet = _derive_subnet(known_ip)
+    log.info("Auto-discovery: scanning %s for Fire TV (port %d)…", subnet, port)
+
+    network = ipaddress.IPv4Network(subnet, strict=False)
+    hosts = [str(h) for h in network.hosts()]
+
+    # Phase 1: fast TCP port scan (parallel)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as ex:
+        open_hosts = [
+            ip for ip, reachable in zip(
+                hosts, ex.map(lambda h: _port_open(h, port), hosts)
+            ) if reachable
+        ]
+
+    if not open_hosts:
+        log.warning("Auto-discovery: no devices found with port %d open on %s", port, subnet)
+        return None
+
+    log.info("Auto-discovery: %d candidate(s) with port %d open: %s",
+             len(open_hosts), port, ", ".join(open_hosts))
+
+    # Phase 2: verify each candidate is actually a Fire TV
+    for ip in open_hosts:
+        if ip == known_ip:
+            continue   # already know this one failed — skip
+        log.info("Auto-discovery: checking %s…", ip)
+        if _is_firetv(ip, port):
+            log.info("Auto-discovery: Fire TV found at %s", ip)
+            return ip
+
+    log.warning("Auto-discovery: no Fire TV confirmed on %s", subnet)
+    return None
+
+
+def save_ip_to_config(new_ip: str):
+    """Persist the newly discovered IP back to config.yaml."""
+    cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+    try:
+        with open(cfg_path) as f:
+            content = f.read()
+        # Replace the ip field under firetv: section
+        updated = re.sub(
+            r'(firetv:\s*\n(?:[ \t]+#[^\n]*\n)*[ \t]+ip:\s*")[^"]+(")',
+            rf'\g<1>{new_ip}\g<2>',
+            content,
+        )
+        with open(cfg_path, "w") as f:
+            f.write(updated)
+        log.info("config.yaml updated with new Fire TV IP: %s", new_ip)
+    except Exception as e:
+        log.warning("Could not update config.yaml with new IP: %s", e)
+
+
 def get_foreground_app(ip: str, port: int) -> Optional[str]:
     """
     Returns the package name of the foreground app on Fire TV, or None.
@@ -249,6 +344,7 @@ class Poller:
         self.ip: str = cfg["firetv"]["ip"]
         self.port: int = cfg["firetv"]["port"]
         self.poll_interval: int = cfg["firetv"]["poll_interval"]
+        self.auto_discover: bool = cfg["firetv"].get("auto_discover", True)
         self.package_map: dict = build_package_map(cfg)
         self.child_name: str = cfg["child"]["name"]
         self.daily_limit_min: int = cfg["child"]["daily_limit_minutes"]
@@ -257,6 +353,7 @@ class Poller:
         self.current_session_id: Optional[int] = None
         self.current_app_key: Optional[str] = None
         self.current_package: Optional[str] = None
+        self._connect_failures: int = 0   # consecutive failures before triggering discovery
 
         # Track which apps have already triggered an alert today
         self.alerted_today: set = set()
@@ -385,9 +482,39 @@ class Poller:
                 if not connected:
                     connected = connect(self.ip, self.port)
                     if not connected:
-                        log.warning("Retrying ADB connection in 30s...")
-                        time.sleep(30)
+                        self._connect_failures += 1
+                        # After 3 consecutive failures, try auto-discovery
+                        if self.auto_discover and self._connect_failures >= 3:
+                            log.warning(
+                                "Connection to %s failed %d times — "
+                                "TV may have a new IP. Starting auto-discovery…",
+                                self.ip, self._connect_failures
+                            )
+                            new_ip = discover_firetv(self.ip, self.port)
+                            if new_ip:
+                                log.info(
+                                    "Fire TV found at new IP: %s (was %s). "
+                                    "Updating config.yaml.",
+                                    new_ip, self.ip
+                                )
+                                self.ip = new_ip
+                                save_ip_to_config(new_ip)
+                                self._connect_failures = 0
+                            else:
+                                log.warning(
+                                    "Auto-discovery found no Fire TV. "
+                                    "Is the TV powered on and on the same WiFi?"
+                                )
+                                time.sleep(60)   # wait longer before next scan
+                        else:
+                            log.warning(
+                                "Retrying ADB connection in 30s… "
+                                "(auto-discovery activates after 3 failures)"
+                            )
+                            time.sleep(30)
                         continue
+
+                    self._connect_failures = 0   # reset on success
 
                 package = get_foreground_app(self.ip, self.port)
                 if package is None:

@@ -299,6 +299,53 @@ http://192.168.1.4:8000
 
 ---
 
+### Fire TV IP changes after every restart
+
+Home routers assign IPs via DHCP, which can give the Fire TV a different address each time it restarts. Two ways to fix this:
+
+---
+
+**Option A — DHCP Reservation on your router (recommended, permanent fix)**
+
+This tells your router to always assign the same IP to the Fire TV based on its MAC address. No code changes needed.
+
+1. Find your Fire TV's **MAC address**:
+   `Settings → My Fire TV → About → Network` — note the WiFi MAC address
+
+2. Log in to your router admin panel:
+
+   | ISP | Default router URL | Login |
+   |-----|-------------------|-------|
+   | Airtel | `http://192.168.1.1` | admin / airtel |
+   | Jio | `http://192.168.29.1` | administrator / jiocentrum |
+   | ACT Fibernet | `http://192.168.1.1` | admin / admin |
+
+3. Look for **DHCP Reservation** (also called *Static DHCP*, *Address Binding*, or *IP-MAC Binding*)
+
+4. Add an entry: MAC address of Fire TV → fixed IP (e.g. `192.168.1.15`)
+
+5. Restart the Fire TV — it will always get that IP from now on
+
+---
+
+**Option B — Auto-discovery (built-in fallback, enabled by default)**
+
+If the router doesn't support DHCP reservation, ConFireTV handles it automatically. When the poller fails to connect 3 times in a row, it:
+
+1. Scans your entire subnet (`192.168.1.0/24`) for devices with ADB port 5555 open
+2. Verifies each candidate is a Fire TV (checks for the Fire TV launcher package)
+3. Reconnects and **updates `config.yaml`** with the new IP automatically
+
+No action needed — this is on by default (`auto_discover: true` in `config.yaml`).
+
+To disable it (if using DHCP reservation):
+```yaml
+firetv:
+  auto_discover: false
+```
+
+---
+
 ### App not being tracked
 
 Use `python diagnose.py` — it searches installed packages automatically and suggests the correct `config.yaml` entry.

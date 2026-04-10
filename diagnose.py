@@ -10,7 +10,9 @@ and what needs to be fixed.
 """
 
 import os
+import platform
 import re
+import shutil
 import subprocess
 import sys
 import yaml
@@ -30,6 +32,35 @@ def fail(msg):  print(f"  {RED}✗{RESET} {msg}")
 def warn(msg):  print(f"  {YELLOW}⚠{RESET} {msg}")
 def info(msg):  print(f"  {CYAN}→{RESET} {msg}")
 def head(msg):  print(f"\n{BOLD}{msg}{RESET}")
+
+
+def find_adb() -> str:
+    """
+    Locate the adb binary cross-platform.
+    Checks PATH first, then falls back to common install locations.
+    Returns the path if found, or empty string if not found.
+    """
+    # Check PATH first
+    found = shutil.which("adb")
+    if found:
+        return found
+
+    # Common locations per OS
+    if platform.system() == "Windows":
+        candidates = [
+            r"C:\platform-tools\adb.exe",
+            os.path.expanduser(r"~\AppData\Local\Android\Sdk\platform-tools\adb.exe"),
+            r"C:\Android\platform-tools\adb.exe",
+        ]
+    elif platform.system() == "Darwin":
+        candidates = ["/opt/homebrew/bin/adb", "/usr/local/bin/adb"]
+    else:
+        candidates = ["/usr/bin/adb", "/usr/local/bin/adb"]
+
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return ""
 
 
 def run(cmd, timeout=15):
@@ -61,18 +92,53 @@ def main():
 
     # ── 2. ADB binary ──────────────────────────────────────────
     head("2. Checking ADB binary")
-    stdout, stderr, rc = run(["adb", "version"])
+    adb_bin = find_adb()
+    if not adb_bin:
+        fail("adb not found.")
+        sys_name = platform.system()
+        if sys_name == "Windows":
+            print(f"""
+  {RED}adb.exe is not installed or not in your PATH.{RESET}
+
+  Fix — 4 steps:
+
+  {CYAN}Step 1{RESET}  Download Android Platform Tools:
+          https://developer.android.com/studio/releases/platform-tools
+          Click "Download SDK Platform-Tools for Windows"
+
+  {CYAN}Step 2{RESET}  Extract the zip to:  C:\\platform-tools\\
+          You should see  C:\\platform-tools\\adb.exe
+
+  {CYAN}Step 3{RESET}  Add to Windows PATH:
+          Start → search "Environment Variables"
+          → Edit the system environment variables
+          → Environment Variables → System variables → Path → Edit → New
+          → type:  C:\\platform-tools
+          → OK on all dialogs
+
+  {CYAN}Step 4{RESET}  Open a NEW Command Prompt and run:
+          adb version
+          (should print "Android Debug Bridge version ...")
+
+  Then run diagnose.py again.
+""")
+        elif sys_name == "Darwin":
+            info("Install: brew install android-platform-tools")
+        else:
+            info("Install: sudo apt install adb")
+        sys.exit(1)
+
+    stdout, stderr, rc = run([adb_bin, "version"])
     if rc == 0 and stdout:
         ok(f"Found: {stdout.splitlines()[0]}")
+        ok(f"Path:  {adb_bin}")
     else:
-        fail("adb not found in PATH.")
-        info("Install:  macOS → brew install android-platform-tools")
-        info("          Ubuntu → sudo apt install adb")
+        fail(f"adb found at {adb_bin} but failed to run: {stderr}")
         sys.exit(1)
 
     # ── 3. Connect ─────────────────────────────────────────────
     head(f"3. Connecting to Fire TV at {ip}:{port}")
-    stdout, stderr, rc = run(["adb", "connect", f"{ip}:{port}"])
+    stdout, stderr, rc = run([adb_bin, "connect", f"{ip}:{port}"])
     out = (stdout or "") + (stderr or "")
     if "connected" in out.lower():
         ok(f"Connect result: {out.strip()}")
@@ -92,7 +158,7 @@ def main():
 
     # ── 4. Shell verify ────────────────────────────────────────
     head("4. Verifying ADB shell responds")
-    stdout, stderr, rc = run(["adb", "-s", f"{ip}:{port}", "shell", "echo", "adb_ok"])
+    stdout, stderr, rc = run([adb_bin, "-s", f"{ip}:{port}", "shell", "echo", "adb_ok"])
     if stdout and "adb_ok" in stdout:
         ok("Shell is responding.")
     else:
@@ -104,7 +170,7 @@ def main():
 
     # ── 5. Installed packages ──────────────────────────────────
     head("5. Checking installed packages for tracked apps")
-    stdout, _, _ = run(["adb", "-s", f"{ip}:{port}", "shell", "pm", "list", "packages"])
+    stdout, _, _ = run([adb_bin, "-s", f"{ip}:{port}", "shell", "pm", "list", "packages"])
     installed = set(l.replace("package:", "").strip() for l in (stdout or "").splitlines())
 
     # Broad search terms to find packages even when exact name differs
@@ -162,7 +228,7 @@ def main():
     ]
 
     print("\n  [Method 1] dumpsys window")
-    stdout, _, _ = run(["adb", "-s", f"{ip}:{port}", "shell", "dumpsys", "window"])
+    stdout, _, _ = run([adb_bin, "-s", f"{ip}:{port}", "shell", "dumpsys", "window"])
     if stdout:
         detected = try_patterns(stdout, WINDOW_PATTERNS)
         if detected:
@@ -186,7 +252,7 @@ def main():
 
     if not detected:
         print("\n  [Method 2] dumpsys window windows")
-        stdout, _, _ = run(["adb", "-s", f"{ip}:{port}", "shell", "dumpsys", "window", "windows"])
+        stdout, _, _ = run([adb_bin, "-s", f"{ip}:{port}", "shell", "dumpsys", "window", "windows"])
         if stdout:
             detected = try_patterns(stdout, WINDOW_PATTERNS)
             if detected:
@@ -200,7 +266,7 @@ def main():
 
     if not detected:
         print("\n  [Method 3] dumpsys activity activities")
-        stdout, _, _ = run(["adb", "-s", f"{ip}:{port}", "shell", "dumpsys", "activity", "activities"])
+        stdout, _, _ = run([adb_bin, "-s", f"{ip}:{port}", "shell", "dumpsys", "activity", "activities"])
         if stdout:
             detected = try_patterns(stdout, ACTIVITY_PATTERNS)
             if detected:
@@ -214,7 +280,7 @@ def main():
 
     if not detected:
         print("\n  [Method 4] dumpsys activity top")
-        stdout, _, _ = run(["adb", "-s", f"{ip}:{port}", "shell", "dumpsys", "activity", "top"])
+        stdout, _, _ = run([adb_bin, "-s", f"{ip}:{port}", "shell", "dumpsys", "activity", "top"])
         if stdout:
             m = re.search(r"ACTIVITY\s+([\w\.]+)/", stdout)
             if not m:

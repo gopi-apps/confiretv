@@ -44,11 +44,19 @@ echo  [OK] Running as Administrator
 where nssm >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
-    echo  [ERROR] nssm not found in PATH.
+    echo  [ERROR] NSSM not found in PATH.
     echo.
-    echo  Download NSSM from https://nssm.cc/download
-    echo  Extract nssm.exe and place it in C:\Windows\System32
-    echo  Then run this script again.
+    echo  NSSM is a free Windows service manager (not a Python package).
+    echo  Install it in 3 steps:
+    echo.
+    echo    1. Download from: https://nssm.cc/download
+    echo       (click the top link, e.g. nssm-2.24.zip)
+    echo.
+    echo    2. Extract the zip. Open the win64 folder inside.
+    echo.
+    echo    3. Copy nssm.exe to: C:\Windows\System32\
+    echo.
+    echo  Then open a NEW Command Prompt as Administrator and run this script again.
     pause
     exit /b 1
 )
@@ -77,7 +85,28 @@ if not exist "%PROJECT_DIR%\config.yaml" (
 )
 echo  [OK] config.yaml found
 
-:: ── 5. Create logs directory ─────────────────────────────────────────────────
+:: ── 5. Locate adb.exe ────────────────────────────────────────────────────────
+set "ADB_PATH="
+for %%A in (adb.exe) do set "ADB_PATH=%%~$PATH:A"
+if "%ADB_PATH%"=="" (
+    :: Try common install locations
+    if exist "C:\platform-tools\adb.exe"                                           set "ADB_PATH=C:\platform-tools"
+    if exist "%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"                   set "ADB_PATH=%LOCALAPPDATA%\Android\Sdk\platform-tools"
+    if exist "%PROGRAMFILES%\Android\android-sdk\platform-tools\adb.exe"           set "ADB_PATH=%PROGRAMFILES%\Android\android-sdk\platform-tools"
+    if exist "%PROGRAMFILES(X86)%\Android\android-sdk\platform-tools\adb.exe"      set "ADB_PATH=%PROGRAMFILES(X86)%\Android\android-sdk\platform-tools"
+)
+if "%ADB_PATH%"=="" (
+    echo.
+    echo  [ERROR] adb.exe not found.
+    echo  Download Android Platform Tools from:
+    echo    https://developer.android.com/studio/releases/platform-tools
+    echo  Extract to C:\platform-tools and add that folder to your PATH.
+    pause
+    exit /b 1
+)
+echo  [OK] adb.exe found at: %ADB_PATH%
+
+:: ── 6. Create logs directory ─────────────────────────────────────────────────
 if not exist "%LOGS_DIR%" mkdir "%LOGS_DIR%"
 echo  [OK] Logs directory: %LOGS_DIR%
 
@@ -93,7 +122,14 @@ for %%S in (ConFireTV-Poller ConFireTV-Web ConFireTV-Scheduler) do (
     )
 )
 
-:: ── 7. Install services ──────────────────────────────────────────────────────
+:: ── 7. Windows Firewall — allow port 8000 inbound ────────────────────────────
+echo.
+echo  Configuring Windows Firewall...
+netsh advfirewall firewall delete rule name="ConFireTV Dashboard" >nul 2>&1
+netsh advfirewall firewall add rule name="ConFireTV Dashboard" dir=in action=allow protocol=TCP localport=8000 >nul
+echo  [OK] Firewall rule added for port 8000 (dashboard accessible on WiFi)
+
+:: ── 8. Install services ──────────────────────────────────────────────────────
 echo.
 echo  Installing services...
 
@@ -109,7 +145,9 @@ nssm set ConFireTV-Poller AppStderr "%LOGS_DIR%\poller.log"
 nssm set ConFireTV-Poller AppRotateFiles 1
 nssm set ConFireTV-Poller AppRotateBytes 5242880
 nssm set ConFireTV-Poller AppRestartDelay 10000
-echo  [OK] ConFireTV-Poller installed
+:: Pass adb location explicitly — Windows Services run as SYSTEM with minimal PATH
+nssm set ConFireTV-Poller AppEnvironmentExtra "PATH=%ADB_PATH%;%SystemRoot%\System32;%SystemRoot%"
+echo  [OK] ConFireTV-Poller installed (adb path: %ADB_PATH%)
 
 :: --- Web ---------------------------------------------------------------------
 nssm install ConFireTV-Web "%VENV_UVICORN%"
@@ -151,8 +189,14 @@ echo.
 echo  =========================================
 echo  Installation complete!
 echo.
-echo  Dashboard:    http://localhost:8000
-echo               (or http://THIS-PC-IP:8000 from any device on WiFi)
+echo  Dashboard (this PC):     http://localhost:8000
+for /f "tokens=2 delims=:" %%I in ('ipconfig ^| findstr /i "IPv4" ^| findstr /v "127.0.0.1"') do (
+    set "PC_IP=%%I"
+    set "PC_IP=!PC_IP: =!"
+    echo  Dashboard (other devices): http://!PC_IP!:8000
+    goto :ip_done
+)
+:ip_done
 echo.
 echo  Manage:       platform\windows\manage.bat status
 echo  View logs:    platform\windows\manage.bat logs

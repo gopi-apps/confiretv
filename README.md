@@ -244,16 +244,74 @@ ConFireTV/
 
 ## Troubleshooting
 
-**"TV is idle" after 30 minutes:**
-Run `python diagnose.py` — it will test every step and show the exact failure point.
+### "TV is idle" — dashboard shows no activity
 
-**App not being tracked:**
-Use `python diagnose.py` — it searches for the package name automatically and suggests the correct value for `config.yaml`.
+**Step 1 — Run the diagnostic tool:**
+```bash
+# macOS / Linux
+python diagnose.py
 
-**Dashboard not reachable from phone:**
-Make sure your phone and the server are on the same WiFi. Use the server's local IP (e.g. `192.168.1.10:8000`), not `localhost`.
+# Windows
+venv\Scripts\python diagnose.py
+```
+This tests every step (ADB connection, shell access, package detection) and pinpoints the exact failure.
 
-**Email not sending:**
+**Step 2 — Check the poller log for errors:**
+```bash
+python manage.py logs poller
+```
+
+**Windows-specific fix — service can't find adb.exe:**
+
+Windows Services run as the SYSTEM account which has a minimal PATH — it won't find `adb.exe` even if it works in your terminal. Run this once in an **Administrator Command Prompt**, then restart the service:
+
+```batch
+nssm set ConFireTV-Poller AppEnvironmentExtra "PATH=C:\platform-tools;C:\Windows\System32"
+nssm restart ConFireTV-Poller
+```
+
+> Replace `C:\platform-tools` with wherever you extracted Android Platform Tools if different.
+
+---
+
+### Dashboard not reachable from other devices on WiFi
+
+**Windows-specific fix — Windows Firewall is blocking port 8000:**
+
+Run this once in an **Administrator Command Prompt**:
+
+```batch
+netsh advfirewall firewall add rule name="ConFireTV Dashboard" dir=in action=allow protocol=TCP localport=8000
+```
+
+Then find your PC's local IP and open that address from any device on the same WiFi:
+
+```batch
+ipconfig
+:: Look for "IPv4 Address" under your WiFi adapter, e.g. 192.168.1.4
+```
+
+```
+http://192.168.1.4:8000
+```
+
+> The `install_service.bat` script runs both fixes automatically for fresh installs.
+
+---
+
+### App not being tracked
+
+Use `python diagnose.py` — it searches installed packages automatically and suggests the correct `config.yaml` entry.
+
+Or search manually:
+```bash
+adb -s <TV-IP>:5555 shell pm list packages | grep -i <appname>
+```
+
+---
+
+### Email not sending
+
 Gmail requires an App Password, not your regular password. Generate one at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). If that page is unavailable (passkey accounts), use [Brevo](https://www.brevo.com) SMTP — see `config.yaml.example`.
 
 ---

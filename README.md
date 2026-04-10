@@ -363,6 +363,117 @@ Gmail requires an App Password, not your regular password. Generate one at [myac
 
 ---
 
+## Uninstalling
+
+### Windows
+
+**Step 1 — Remove the Windows Services**
+
+Run as **Administrator**:
+```batch
+platform\windows\uninstall_service.bat
+```
+
+This stops and removes all three services (`ConFireTV-Poller`, `ConFireTV-Web`, `ConFireTV-Scheduler`).
+
+Or manually:
+```batch
+nssm stop   ConFireTV-Poller
+nssm stop   ConFireTV-Web
+nssm stop   ConFireTV-Scheduler
+nssm remove ConFireTV-Poller    confirm
+nssm remove ConFireTV-Web       confirm
+nssm remove ConFireTV-Scheduler confirm
+```
+
+**Step 2 — Remove the Firewall rule**
+
+```batch
+netsh advfirewall firewall delete rule name="ConFireTV Dashboard"
+```
+
+**Step 3 — Delete the project folder**
+
+```batch
+rmdir /s /q C:\path\to\ConFireTV
+```
+
+**Step 4 — Optional: remove NSSM and ADB**
+
+These are standalone tools not exclusive to ConFireTV. Only remove if you don't need them for anything else:
+```batch
+:: Remove NSSM
+del C:\Windows\System32\nssm.exe
+
+:: Remove Android Platform Tools
+rmdir /s /q C:\platform-tools
+:: Then remove C:\platform-tools from your system PATH via Environment Variables
+```
+
+---
+
+### macOS
+
+**Step 1 — Unload and remove the LaunchAgents**
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.confiretvmonitor.poller.plist
+launchctl unload ~/Library/LaunchAgents/com.confiretvmonitor.web.plist
+launchctl unload ~/Library/LaunchAgents/com.confiretvmonitor.scheduler.plist
+
+rm ~/Library/LaunchAgents/com.confiretvmonitor.poller.plist
+rm ~/Library/LaunchAgents/com.confiretvmonitor.web.plist
+rm ~/Library/LaunchAgents/com.confiretvmonitor.scheduler.plist
+```
+
+**Step 2 — Delete the project folder**
+
+```bash
+rm -rf /path/to/ConFireTV
+```
+
+**Step 3 — Optional: remove ADB**
+
+```bash
+brew uninstall android-platform-tools
+```
+
+---
+
+### Linux / Raspberry Pi
+
+**Step 1 — Stop and disable the services**
+
+```bash
+sudo systemctl stop    confiretvmonitor-poller confiretvmonitor-web confiretvmonitor-scheduler
+sudo systemctl disable confiretvmonitor-poller confiretvmonitor-web confiretvmonitor-scheduler
+sudo rm /etc/systemd/system/confiretvmonitor-*.service
+sudo systemctl daemon-reload
+```
+
+**Step 2 — Delete the project folder**
+
+```bash
+rm -rf /path/to/ConFireTV
+```
+
+**Step 3 — Optional: remove ADB**
+
+```bash
+sudo apt remove adb
+```
+
+---
+
+### Disable ADB on Fire TV (optional)
+
+If you no longer want ADB debugging enabled on the TV:
+
+1. Go to **Settings → My Fire TV → Developer Options**
+2. Set **ADB Debugging → OFF**
+
+---
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first.

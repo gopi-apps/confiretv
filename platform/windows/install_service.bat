@@ -31,7 +31,7 @@ echo  Project: %PROJECT_DIR%
 echo.
 
 :: --- 1. Admin check ---
-net session >/dev/null 2>&1
+net session >nul 2>&1
 if not %errorlevel% == 0 (
     echo  [ERROR] This script must be run as Administrator.
     echo          Right-click install_service.bat and choose "Run as administrator"
@@ -41,7 +41,7 @@ if not %errorlevel% == 0 (
 echo  [OK] Running as Administrator
 
 :: --- 2. Check NSSM ---
-where nssm >/dev/null 2>&1
+where nssm >nul 2>&1
 if not %errorlevel% == 0 (
     echo.
     echo  [ERROR] NSSM not found in PATH.
@@ -122,18 +122,18 @@ echo  [OK] Logs directory: %LOGS_DIR%
 :: --- 7. Windows Firewall - allow port 8000 inbound ---
 echo.
 echo  Configuring Windows Firewall for port 8000...
-netsh advfirewall firewall delete rule name="ConFireTV Dashboard" >/dev/null 2>&1
-netsh advfirewall firewall add rule name="ConFireTV Dashboard" dir=in action=allow protocol=TCP localport=8000 >/dev/null
+netsh advfirewall firewall delete rule name="ConFireTV Dashboard" >nul 2>&1
+netsh advfirewall firewall add rule name="ConFireTV Dashboard" dir=in action=allow protocol=TCP localport=8000 >nul
 echo  [OK] Firewall rule added - dashboard reachable from other devices on WiFi
 
 :: --- 8. Remove old services if they exist ---
 echo.
 echo  Removing any existing ConFireTV services...
 for %%S in (ConFireTV-Poller ConFireTV-Web ConFireTV-Scheduler) do (
-    nssm status %%S >/dev/null 2>&1
+    nssm status %%S >nul 2>&1
     if !errorlevel! == 0 (
-        nssm stop %%S >/dev/null 2>&1
-        nssm remove %%S confirm >/dev/null 2>&1
+        nssm stop %%S >nul 2>&1
+        nssm remove %%S confirm >nul 2>&1
         echo  [REMOVED] %%S
     )
 )

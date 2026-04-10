@@ -1,0 +1,95 @@
+# ConFireTV — Configuration Template
+# Copy this file to config.yaml and fill in your values.
+# config.yaml is gitignored — your credentials will never be committed.
+
+firetv:
+  # Local IP of your Fire TV Stick
+  # Find it: Settings → My Fire TV → About → Network
+  ip: "192.168.1.100"
+  port: 5555
+  # How often to poll for the active app (seconds). 30 is a good default.
+  poll_interval: 30
+
+child:
+  name: "Child Name"
+  # Total daily screen time limit across all apps (minutes). 0 = no limit.
+  daily_limit_minutes: 120
+
+# Per-app daily limits in minutes (0 = no limit for that app)
+app_limits:
+  youtube: 60
+  hotstar: 60
+  prime_video: 60
+  sun_next: 60
+
+# App package names on Fire TV.
+# To find the correct package name for an app on YOUR device, run:
+#   adb -s <TV-IP>:5555 shell pm list packages | grep -i <appname>
+app_packages:
+  youtube:
+    package: "com.amazon.firetv.youtube"
+    display_name: "YouTube"
+    color: "#FF0000"
+  hotstar:
+    package: "in.startv.hotstar"
+    display_name: "Disney+ Hotstar"
+    color: "#1E6FFF"
+  prime_video:
+    package: "com.amazon.avod.thirdpartyclient"
+    display_name: "Amazon Prime Video"
+    color: "#00A8E0"
+  sun_next:
+    package: "com.sun.sunnxt"        # verify with: adb shell pm list packages | grep sun
+    display_name: "Sun NXT"
+    color: "#FF6600"
+  firetv_home:
+    package: "com.amazon.tv.launcher"
+    display_name: "Fire TV Home"
+    color: "#232F3E"
+
+notifications:
+  # ── Option A: Gmail ──────────────────────────────────────────────────────
+  # Use a Gmail App Password (NOT your regular password).
+  # Create one at: https://myaccount.google.com/apppasswords
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  sender_email: "your_gmail@gmail.com"
+  sender_app_password: "xxxx xxxx xxxx xxxx"
+
+  # ── Option B: Brevo (free, 300 emails/day, no App Password needed) ───────
+  # Sign up at https://www.brevo.com, get SMTP key from Settings → SMTP & API
+  # Then comment out the Gmail lines above and uncomment these:
+  # smtp_host: "smtp-relay.brevo.com"
+  # smtp_port: 587
+  # sender_email: "your_brevo_login@gmail.com"
+  # sender_app_password: "your_brevo_smtp_key"
+
+  # Where to receive daily reports (can be same as sender_email)
+  recipient_email: "parent@gmail.com"
+
+  # ntfy.sh push notifications — free, no account needed.
+  # Install the ntfy app on your phone and subscribe to this topic.
+  # Choose any unique string (e.g. "confiretvmonitor-yourname-2024")
+  ntfy_topic: "confiretvmonitor-changeme"
+
+  # Send daily summary email at this time (24h, local time)
+  daily_report_time: "21:00"
+
+  # Send push alert when child reaches this % of their daily limit
+  alert_threshold_percent: 80
+
+bedtime:
+  # Force-stop all apps at this time every night. Set to "" to disable.
+  enforce_time: "22:00"
+  # Days to enforce bedtime
+  days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+web:
+  host: "0.0.0.0"   # 0.0.0.0 = accessible from all devices on your WiFi
+  port: 8000
+  # Optional: protect the dashboard with a password (leave empty for no auth)
+  password: ""
+
+database:
+  # Path to the SQLite database file (relative to project root)
+  path: "data/confiretvmonitor.db"

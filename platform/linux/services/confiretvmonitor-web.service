@@ -1,0 +1,17 @@
+[Unit]
+Description=ConFireTV Web Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=__VENV_UVICORN__ web.app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=append:__PROJECT_DIR__/logs/web.log
+StandardError=append:__PROJECT_DIR__/logs/web.log
+
+[Install]
+WantedBy=multi-user.target

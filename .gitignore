@@ -1,0 +1,43 @@
+# ConFireTV .gitignore
+
+# User config — contains credentials, never commit
+config.yaml
+
+# Runtime data
+data/
+logs/
+
+# Generated macOS LaunchAgent plists (contain absolute paths)
+platform/macos/launchd/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.claude/

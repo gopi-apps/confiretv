@@ -1,0 +1,17 @@
+[Unit]
+Description=ConFireTV Scheduler — daily reports and bedtime enforcer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=__VENV_PYTHON__ scheduler.py
+Restart=always
+RestartSec=10
+StandardOutput=append:__PROJECT_DIR__/logs/scheduler.log
+StandardError=append:__PROJECT_DIR__/logs/scheduler.log
+
+[Install]
+WantedBy=multi-user.target

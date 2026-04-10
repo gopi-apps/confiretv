@@ -1,0 +1,17 @@
+[Unit]
+Description=ConFireTV ADB Poller — monitors Fire TV Stick app usage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=__VENV_PYTHON__ -m monitor.adb_poller
+Restart=always
+RestartSec=10
+StandardOutput=append:__PROJECT_DIR__/logs/poller.log
+StandardError=append:__PROJECT_DIR__/logs/poller.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>ConFireTV — {{ child_name }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e8eaf0;
+      --muted: #7c7f8e;
+      --accent: #FF9900;
+      --green: #27ae60;
+      --red: #e74c3c;
+      --yellow: #f39c12;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: #232F3E;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-logo { font-size: 22px; }
+    .header-title { font-size: 17px; font-weight: 700; color: var(--accent); }
+    .header-sub { font-size: 12px; color: #aaa; }
+
+    /* Main layout */
+    .main { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* Live status */
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+    .status-dot.idle { background: var(--muted); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .status-app { font-size: 20px; font-weight: 700; }
+    .status-time { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+    .kill-btn {
+      margin-top: 12px;
+      width: 100%;
+      padding: 11px;
+      border-radius: 8px;
+      border: none;
+      background: var(--red);
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s;
+    }
+    .kill-btn:disabled { opacity: .4; cursor: default; }
+    .kill-btn:not(:disabled):hover { opacity: .85; }
+
+    /* Daily total */
+    .total-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .total-time { font-size: 32px; font-weight: 700; }
+    .total-limit { font-size: 13px; color: var(--muted); }
+
+    .progress-bar-wrap {
+      background: #2a2d3a;
+      border-radius: 6px;
+      height: 8px;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width .5s ease;
+    }
+    .progress-label { font-size: 11px; color: var(--muted); }
+
+    /* Per-app rows */
+    .app-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .app-row:last-child { border-bottom: none; }
+    .app-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .app-name { flex: 1; font-size: 14px; font-weight: 500; }
+    .app-time { font-size: 14px; font-weight: 600; min-width: 50px; text-align: right; }
+    .app-limit-wrap { width: 90px; }
+    .app-limit-bar { background: #2a2d3a; border-radius: 4px; height: 5px; overflow: hidden; margin-bottom: 3px; }
+    .app-limit-fill { height: 100%; border-radius: 4px; }
+    .app-limit-label { font-size: 10px; color: var(--muted); text-align: right; }
+
+    .edit-limit-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 5px;
+      padding: 3px 7px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .edit-limit-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Session log */
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .session-item:last-child { border-bottom: none; }
+    .session-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .session-app { flex: 1; font-weight: 500; }
+    .session-time { color: var(--muted); font-size: 12px; }
+    .session-dur { font-weight: 600; min-width: 40px; text-align: right; }
+
+    /* Chart */
+    .chart-wrap { position: relative; height: 180px; }
+
+    /* Daily limit control */
+    .limit-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .limit-input {
+      width: 70px;
+      background: #2a2d3a;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 14px;
+    }
+    .limit-input:focus { outline: none; border-color: var(--accent); }
+    .limit-save-btn {
+      background: var(--accent);
+      color: #111;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .limit-save-btn:hover { opacity: .85; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      width: 300px;
+    }
+    .modal h3 { margin-bottom: 14px; font-size: 16px; }
+    .modal label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 5px; }
+    .modal input {
+      width: 100%; padding: 9px 12px;
+      background: #2a2d3a; border: 1px solid var(--border);
+      border-radius: 7px; color: var(--text); font-size: 15px;
+    }
+    .modal input:focus { outline: none; border-color: var(--accent); }
+    .modal-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .modal-actions button {
+      flex: 1; padding: 10px; border-radius: 7px;
+      border: none; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-cancel { background: #2a2d3a; color: var(--muted); }
+    .btn-save { background: var(--accent); color: #111; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: #232F3E; color: white;
+      border-radius: 8px; padding: 10px 18px; font-size: 13px;
+      opacity: 0; transition: opacity .3s;
+      z-index: 200; pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+    .tab-btn {
+      flex: 1; padding: 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--muted);
+      font-size: 12px; font-weight: 600;
+      cursor: pointer;
+    }
+    .tab-btn.active { background: var(--accent); color: #111; border-color: var(--accent); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    #last-updated { font-size: 11px; color: var(--muted); text-align: right; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">📺</div>
+  <div style="flex:1">
+    <div class="header-title">ConFireTV</div>
+    <div class="header-sub">{{ child_name }}'s TV Monitor</div>
+  </div>
+  <div id="svc-pills" style="display:flex;gap:5px;align-items:center;"></div>
+</div>
+
+<div class="main">
+
+  <!-- Live Status -->
+  <div class="card" id="status-card">
+    <div class="card-title">Live Status</div>
+    <div class="status-indicator">
+      <div class="status-dot idle" id="status-dot"></div>
+      <div>
+        <div class="status-app" id="status-app">Loading…</div>
+        <div class="status-time" id="status-time"></div>
+      </div>
+    </div>
+    <button class="kill-btn" id="kill-btn" disabled onclick="killApp()">
+      Stop TV Now
+    </button>
+  </div>
+
+  <!-- Daily Total -->
+  <div class="card">
+    <div class="card-title">Today — <span id="today-date"></span></div>
+    <div class="total-row">
+      <div class="total-time" id="total-time">—</div>
+      <div class="total-limit" id="total-limit"></div>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="daily-bar" style="width:0%"></div>
+    </div>
+    <div class="progress-label" id="daily-pct-label"></div>
+  </div>
+
+  <!-- Per-app + Weekly tabs -->
+  <div class="card">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('today-tab', this)">Today</button>
+      <button class="tab-btn" onclick="switchTab('weekly-tab', this)">7 Days</button>
+      <button class="tab-btn" onclick="switchTab('sessions-tab', this)">Sessions</button>
+      <button class="tab-btn" onclick="switchTab('settings-tab', this)">Settings</button>
+    </div>
+
+    <!-- Today per-app -->
+    <div class="tab-panel active" id="today-tab">
+      <div id="app-list">Loading…</div>
+    </div>
+
+    <!-- Weekly chart -->
+    <div class="tab-panel" id="weekly-tab">
+      <div class="chart-wrap">
+        <canvas id="weeklyChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Session log -->
+    <div class="tab-panel" id="sessions-tab">
+      <div id="session-list">Loading…</div>
+    </div>
+
+    <!-- Settings -->
+    <div class="tab-panel" id="settings-tab">
+      <div class="card-title" style="margin-bottom:10px;">Daily Total Limit</div>
+      <div class="limit-control">
+        <input class="limit-input" type="number" id="daily-limit-input"
+               min="0" max="600" value="{{ daily_limit_min }}" />
+        <span style="color:var(--muted);font-size:13px;">min / day</span>
+        <button class="limit-save-btn" onclick="saveDailyLimit()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="last-updated"></div>
+
+</div>
+
+<!-- Edit Limit Modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3>Set Daily Limit</h3>
+    <input type="hidden" id="modal-app-key" />
+    <label>App</label>
+    <p id="modal-app-name" style="font-weight:600;margin-bottom:12px;"></p>
+    <label>Daily Limit (minutes, 0 = no limit)</label>
+    <input type="number" id="modal-limit-input" min="0" max="600" />
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveLimit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // -------------------------------------------------------------------------
+  // State
+  // -------------------------------------------------------------------------
+  let weeklyChart = null;
+  let weeklyLoaded = false;
+  let sessionsLoaded = false;
+  let statusInterval = null;
+  let todayInterval = null;
+
+  // -------------------------------------------------------------------------
+  // Init
+  // -------------------------------------------------------------------------
+  document.addEventListener("DOMContentLoaded", () => {
+    fetchStatus();
+    fetchToday();
+    fetchServiceStatus();
+    statusInterval = setInterval(fetchStatus, 10000);
+    todayInterval  = setInterval(fetchToday, 30000);
+    setInterval(fetchServiceStatus, 30000);
+  });
+
+  async function fetchServiceStatus() {
+    try {
+      const r = await fetch("/api/service-status");
+      const d = await r.json();
+      const pills = document.getElementById("svc-pills");
+      const labels = { poller: "Monitor", web: "Web", scheduler: "Alerts" };
+      pills.innerHTML = Object.entries(d).map(([svc, s]) => {
+        const color = s.running ? "#27ae60" : "#e74c3c";
+        const title = s.running ? `${labels[svc]} running (PID ${s.pid})` : `${labels[svc]} not running — run: bash install_service.sh`;
+        return `<span title="${title}"
+          style="font-size:10px;padding:3px 7px;border-radius:10px;
+          background:${color}22;color:${color};border:1px solid ${color}44;
+          cursor:default;white-space:nowrap">${labels[svc]}</span>`;
+      }).join("");
+    } catch(e) {
+      // Silently ignore — dashboard still works without service status
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Tabs
+  // -------------------------------------------------------------------------
+  function switchTab(panelId, btn) {
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.getElementById(panelId).classList.add("active");
+    btn.classList.add("active");
+    if (panelId === "weekly-tab" && !weeklyLoaded) fetchWeekly();
+    if (panelId === "sessions-tab") fetchSessions();
+  }
+
+  // -------------------------------------------------------------------------
+  // Live status
+  // -------------------------------------------------------------------------
+  async function fetchStatus() {
+    try {
+      const r = await fetch("/api/status");
+      const d = await r.json();
+      const dot = document.getElementById("status-dot");
+      const app = document.getElementById("status-app");
+      const time = document.getElementById("status-time");
+      const btn = document.getElementById("kill-btn");
+
+      if (d.watching) {
+        dot.className = "status-dot live";
+        dot.style.background = d.color;
+        dot.style.boxShadow = `0 0 8px ${d.color}`;
+        app.textContent = d.display_name;
+        time.textContent = `Watching since ${d.since} · ${d.elapsed_hm}`;
+        btn.disabled = false;
+      } else {
+        dot.className = "status-dot idle";
+        dot.style.background = "";
+        dot.style.boxShadow = "";
+        app.textContent = "TV is idle";
+        time.textContent = "No app currently running";
+        btn.disabled = true;
+      }
+    } catch(e) {
+      document.getElementById("status-app").textContent = "Unable to connect";
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Today
+  // -------------------------------------------------------------------------
+  async function fetchToday() {
+    const r = await fetch("/api/today");
+    const d = await r.json();
+
+    document.getElementById("today-date").textContent = d.date;
+    document.getElementById("total-time").textContent = d.total_hm || "0m";
+    document.getElementById("total-limit").textContent = d.daily_limit_min
+      ? `/ ${d.daily_limit_min} min daily limit`
+      : "";
+
+    const pct = d.daily_pct;
+    const bar = document.getElementById("daily-bar");
+    bar.style.width = pct + "%";
+    bar.style.background = pct >= 100 ? "var(--red)" : pct >= 80 ? "var(--yellow)" : "var(--green)";
+    document.getElementById("daily-pct-label").textContent =
+      d.daily_limit_min ? `${pct}% of daily limit used` : "";
+
+    // Per-app list
+    const list = document.getElementById("app-list");
+    if (!d.apps.length) {
+      list.innerHTML = `<p style="color:var(--muted);font-size:13px;padding:8px 0;">No activity today.</p>`;
+      return;
+    }
+    list.innerHTML = d.apps.map(app => {
+      const barColor = app.pct >= 100 ? "var(--red)" : app.pct >= 80 ? "var(--yellow)" : app.color;
+      const limitLabel = app.limit_min ? `${app.pct}% of ${app.limit_min}m` : "No limit";
+      return `
+        <div class="app-row">
+          <div class="app-dot" style="background:${app.color}"></div>
+          <div class="app-name">${app.display_name}</div>
+          <div class="app-time">${app.total_hm || "0m"}</div>
+          <div class="app-limit-wrap">
+            <div class="app-limit-bar">
+              <div class="app-limit-fill" style="width:${app.pct}%;background:${barColor}"></div>
+            </div>
+            <div class="app-limit-label">${limitLabel}</div>
+          </div>
+          <button class="edit-limit-btn" onclick="openModal('${app.app_key}','${app.display_name}',${app.limit_min})">
+            Edit
+          </button>
+        </div>`;
+    }).join("");
+
+    document.getElementById("last-updated").textContent =
+      "Updated " + new Date().toLocaleTimeString("en-IN", {hour:"2-digit",minute:"2-digit"});
+  }
+
+  // -------------------------------------------------------------------------
+  // Weekly chart
+  // -------------------------------------------------------------------------
+  async function fetchWeekly() {
+    const r = await fetch("/api/weekly");
+    const d = await r.json();
+    weeklyLoaded = true;
+
+    const ctx = document.getElementById("weeklyChart").getContext("2d");
+    if (weeklyChart) weeklyChart.destroy();
+
+    weeklyChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: d.labels,
+        datasets: d.datasets.map(ds => ({
+          label: ds.label,
+          data: ds.data,
+          backgroundColor: ds.color + "cc",
+          borderColor: ds.color,
+          borderWidth: 1,
+          borderRadius: 4,
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: "#aaa", font: { size: 11 }, boxWidth: 12 }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${ctx.raw} min`
+            }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: "#aaa", font: { size: 10 } },
+            grid: { color: "#2a2d3a" }
+          },
+          y: {
+            stacked: true,
+            ticks: { color: "#aaa", font: { size: 10 }, callback: v => v + "m" },
+            grid: { color: "#2a2d3a" }
+          }
+        }
+      }
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Sessions
+  // -------------------------------------------------------------------------
+  async function fetchSessions() {
+    const r = await fetch("/api/sessions");
+    const d = await r.json();
+    const list = document.getElementById("session-list");
+
+    if (!d.sessions.length) {
+      list.innerHTML = `<p style="color:var(--muted);font-size:13px;padding:8px 0;">No sessions today.</p>`;
+      return;
+    }
+    list.innerHTML = d.sessions.map(s => `
+      <div class="session-item">
+        <div class="session-dot" style="background:${s.color}"></div>
+        <div class="session-app">${s.display_name}</div>
+        <div class="session-time">${s.start_fmt}</div>
+        <div class="session-dur">${s.duration_hm}</div>
+      </div>`).join("");
+  }
+
+  // -------------------------------------------------------------------------
+  // Kill app
+  // -------------------------------------------------------------------------
+  async function killApp() {
+    const btn = document.getElementById("kill-btn");
+    btn.disabled = true;
+    btn.textContent = "Stopping…";
+    try {
+      const r = await fetch("/api/kill-app", { method: "POST" });
+      const d = await r.json();
+      showToast(d.message);
+      setTimeout(() => { fetchStatus(); fetchToday(); }, 2000);
+    } catch(e) {
+      showToast("Error connecting to server");
+    }
+    btn.textContent = "Stop TV Now";
+  }
+
+  // -------------------------------------------------------------------------
+  // Limits modal
+  // -------------------------------------------------------------------------
+  function openModal(appKey, appName, currentLimit) {
+    document.getElementById("modal-app-key").value = appKey;
+    document.getElementById("modal-app-name").textContent = appName;
+    document.getElementById("modal-limit-input").value = currentLimit;
+    document.getElementById("modal").classList.add("open");
+  }
+
+  function closeModal() {
+    document.getElementById("modal").classList.remove("open");
+  }
+
+  async function saveLimit() {
+    const appKey = document.getElementById("modal-app-key").value;
+    const limitMin = parseInt(document.getElementById("modal-limit-input").value);
+    const r = await fetch("/api/set-limit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ app_key: appKey, limit_min: limitMin })
+    });
+    const d = await r.json();
+    closeModal();
+    showToast(d.success ? `Limit saved: ${limitMin} min/day` : "Error saving limit");
+    fetchToday();
+  }
+
+  async function saveDailyLimit() {
+    const limitMin = parseInt(document.getElementById("daily-limit-input").value);
+    const r = await fetch("/api/set-daily-limit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit_min: limitMin })
+    });
+    const d = await r.json();
+    showToast(d.success ? `Daily limit set to ${limitMin} min` : "Error saving");
+    fetchToday();
+  }
+
+  // -------------------------------------------------------------------------
+  // Toast
+  // -------------------------------------------------------------------------
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 3000);
+  }
+</script>
+</body>
+</html>

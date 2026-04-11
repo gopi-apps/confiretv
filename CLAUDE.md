@@ -1,33 +1,26 @@
-# CLAUDE.md — ConFireTV Project Context
+# CLAUDE.md — ConFireTV Developer Context
 
 This file is read automatically by Claude Code at session start.
-It captures the full context of this project so any new session can pick up where the last left off.
+It provides architectural context, known gotchas, and quick-start commands for contributors.
 
 ---
 
 ## What This Project Is
 
-**ConFireTV** is a parental control and monitoring system for an Amazon Fire TV Stick.
-It was built for a family in Bangalore, India — one child under 10 watches YouTube,
-Disney+ Hotstar, Amazon Prime Video, and Sun NXT on a Panasonic 32" LED TV with a
-Fire TV Stick on home WiFi.
+**ConFireTV** is an open-source parental control and monitoring system for Amazon Fire TV Stick.
+It solves the gap in Amazon's built-in Screen Time: no per-app usage duration, no history,
+no remote kill, and no useful reporting.
 
-**Problem Amazon's built-in Screen Time does NOT solve:**
-- No per-app usage duration
-- No usage history or analytics
-- No remote kill from phone
-- Very limited reporting in India
-
-**Solution:** Python daemon that connects to Fire TV over ADB/WiFi, polls the
-foreground app every 30 seconds, records sessions to SQLite, and serves a
-mobile-friendly web dashboard on port 8000.
+**Solution:** Python daemon that connects to Fire TV over ADB/WiFi, polls the foreground app
+every 30 seconds, records sessions to SQLite, and serves a mobile-friendly web dashboard
+on port 8000. Works on any home WiFi network without installing anything on the TV.
 
 ---
 
 ## Architecture
 
 ```
-Fire TV Stick  --ADB/WiFi (port 5555)-->  Windows PC (always-on)
+Fire TV Stick  --ADB/WiFi (port 5555)-->  Home server (Windows / macOS / Linux)
                                                |
                                          SQLite DB  (data/confiretvmonitor.db)
                                                |
@@ -36,10 +29,12 @@ Fire TV Stick  --ADB/WiFi (port 5555)-->  Windows PC (always-on)
                               Browser on any phone/laptop on same WiFi
 ```
 
-Three background processes run as Windows Services (via NSSM):
+Three background processes:
 - **ConFireTV-Poller** — `python -m monitor.adb_poller` — polls Fire TV every 30s
 - **ConFireTV-Web** — `uvicorn web.app:app --host 0.0.0.0 --port 8000` — dashboard
 - **ConFireTV-Scheduler** — `python scheduler.py` — daily email report + bedtime enforcer
+
+Service management: **NSSM** (Windows), **LaunchAgent** (macOS), **systemd** (Linux).
 
 ---
 
@@ -57,7 +52,8 @@ ConFireTV/
 │       └── dashboard.html # Mobile-friendly dark UI with Chart.js
 ├── platform/
 │   ├── windows/
-│   │   ├── install_service.bat   # NSSM service installer (run as Administrator)
+│   │   ├── install_service.bat   # Thin launcher → calls install.py as Administrator
+│   │   ├── install.py            # Python installer: NSSM service setup + firewall
 │   │   ├── manage.bat            # status/start/stop/logs
 │   │   └── uninstall_service.bat
 │   ├── macos/
@@ -78,20 +74,20 @@ ConFireTV/
 
 ---
 
-## config.yaml Key Values (User's Setup)
+## config.yaml Shape
 
-DO NOT commit real credentials. The actual `config.yaml` is gitignored.
-This is the shape of the user's real config for reference:
+`config.yaml` is gitignored. See `config.yaml.example` for the full annotated template.
+Key fields:
 
 ```yaml
 firetv:
-  ip: "192.168.1.15"     # Fire TV Stick local IP
+  ip: "192.168.1.100"     # Fire TV Stick local IP
   port: 5555
   poll_interval: 30
-  auto_discover: true    # scans /24 subnet after 3 failed connections
+  auto_discover: true     # scans /24 subnet after 3 failed connections
 
 child:
-  name: "Dhruv"
+  name: "Arjun"
   daily_limit_minutes: 120
 
 app_packages:
@@ -102,15 +98,14 @@ app_packages:
   prime_video:
     package: "com.amazon.avod.thirdpartyclient"
   sun_next:
-    package: "com.suntv.sunnxt"    # NOTE: verified on user's device
+    package: "com.sun.sunnxt"    # verify with: python diagnose.py
   firetv_home:
     package: "com.amazon.tv.launcher"
 
 notifications:
   smtp_host: "smtp.gmail.com"
   smtp_port: 587
-  # sender/recipient emails and app password are in gitignored config.yaml
-  ntfy_topic: "confiretvmonitor-dhruv"
+  ntfy_topic: "confiretvmonitor-yourname"
   daily_report_time: "21:00"
   alert_threshold_percent: 80
 
@@ -131,82 +126,78 @@ database:
 Separate function `_adb_connect_cmd()` runs `adb connect IP:PORT` without `-s`.
 Using `adb(ip, port, "connect", ...)` adds `-s` which causes ADB to reject the command.
 
-### 2. Wrong Sun NXT package name
-The example had `com.sun.sunott` but the user's Fire TV has `com.suntv.sunnxt`.
-Always use `python diagnose.py` to verify package names on the actual device.
+### 2. Sun NXT package name varies by device/region
+Common variants: `com.sun.sunnxt`, `com.suntv.sunnxt`, `com.sun.sunott`.
+Always use `python diagnose.py` to verify the correct package name on the target device.
 
 ### 3. Windows Service can't find adb.exe
-Windows Services run as SYSTEM account with a minimal PATH.
-Fix: NSSM `AppEnvironmentExtra` sets PATH to include the adb directory.
-See `platform/windows/install_service.bat` — it auto-detects the adb path and injects it.
+Windows Services run as the SYSTEM account with a minimal PATH.
+Fix: `install.py` auto-detects `adb.exe` via `shutil.which()` + known candidate paths,
+then sets NSSM `AppEnvironmentExtra` to inject the adb directory into each service's PATH.
 
 ### 4. Windows Firewall blocking port 8000
-Dashboard is not reachable from other devices on WiFi until firewall rule is added.
-`install_service.bat` runs this automatically:
+Dashboard is not reachable from other devices on WiFi until a firewall inbound rule is added.
+`install.py` runs this automatically:
 ```batch
 netsh advfirewall firewall add rule name="ConFireTV Dashboard" dir=in action=allow protocol=TCP localport=8000
 ```
 
-### 5. install_service.bat encoding issues
-The batch file MUST be:
-- Pure ASCII (no Unicode, no em dashes, no box-drawing characters)
-- CRLF line endings (not Unix LF)
-- Windows null device `>nul` not Unix `>/dev/null`
+### 5. install_service.bat replaced with Python installer
+The original batch file failed with `. was unexpected at this time.` when run as Administrator
+on Windows 11 (admin-context cmd.exe parsing quirk). The file is now a 3-line Python launcher:
+```batch
+@echo off
+python "%~dp0..\..\venv\Scripts\python.exe" "%~dp0install.py" %*
+pause
+```
+All installation logic lives in `platform/windows/install.py`.
+If editing the `.bat` file, write it in binary mode with explicit CRLF to avoid encoding issues.
 
-The file in this repo is maintained with a Python script that writes it in binary
-mode with explicit CRLF and ASCII-only content. Never edit it in a Mac text editor
-and save — it will reintroduce LF endings or Unicode characters.
-
-### 6. Fire TV IP changes after TV restart
-Auto-discovery is enabled (`auto_discover: true`). After 3 failed connections,
-`adb_poller.py` scans the entire /24 subnet in parallel (50 threads), verifies
-each candidate is a Fire TV, and updates `config.yaml` automatically.
-The user's ISP router does not support DHCP reservation.
+### 6. Fire TV IP changes after restart
+Auto-discovery is enabled by default (`auto_discover: true`). After 3 failed connections,
+`adb_poller.py` scans the entire /24 subnet in parallel (50 threads), verifies each
+candidate is a Fire TV (checks for the launcher package), and updates `config.yaml` automatically.
+Disable with `auto_discover: false` if using DHCP reservation on your router.
 
 ### 7. Gmail App Password
-User's Google account uses passkeys as primary sign-in, which hides the
-App Passwords page. Direct URL: https://myaccount.google.com/apppasswords
-Alternative: Brevo SMTP (see config.yaml.example Option B).
+Gmail requires an App Password (not your login password).
+Generate one at: https://myaccount.google.com/apppasswords
+If that page is unavailable, use Brevo SMTP instead — see `config.yaml.example` Option B.
+
+### 8. macOS installer PROJECT_DIR bug (fixed)
+`platform/macos/install_service.sh` previously resolved `PROJECT_DIR` to `platform/macos/`
+instead of the project root. Fixed by splitting into `SCRIPT_DIR` + `/../..`:
+```bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+LAUNCHD_DIR="$SCRIPT_DIR/launchd"
+```
 
 ---
 
-## How to Run on Windows (Setup Complete)
+## Quick Start (any platform)
 
-Prerequisites already met on the user's Windows PC:
-- Python 3.9+ installed
-- ADB (Android Platform Tools) installed at `C:\platform-tools\adb.exe`
-- NSSM installed at `C:\Windows\System32\nssm.exe`
-- venv exists at `<project>\venv\`
-- `config.yaml` exists with real credentials
+```bash
+# 1. Clone and configure
+git clone <repo-url>
+cd ConFireTV
+cp config.yaml.example config.yaml
+# Edit config.yaml: set firetv.ip, child.name, notification credentials
 
-**Install/reinstall services:**
-```batch
-:: Run as Administrator
-platform\windows\install_service.bat
-```
+# 2. Python environment
+python -m venv venv
+source venv/bin/activate          # macOS/Linux
+# venv\Scripts\activate           # Windows
 
-**Daily management:**
-```batch
-platform\windows\manage.bat status
-platform\windows\manage.bat logs
-platform\windows\manage.bat stop
-platform\windows\manage.bat start
-```
+pip install -r requirements.txt
 
-Or cross-platform Python manager:
-```batch
-venv\Scripts\python manage.py status
-venv\Scripts\python manage.py logs poller
-```
+# 3. Verify ADB connection (TV must be on with ADB Debugging enabled)
+python diagnose.py
 
-**Diagnose ADB issues:**
-```batch
-venv\Scripts\python diagnose.py
-```
-
-**Dashboard URL (from any device on same WiFi):**
-```
-http://192.168.1.4:8000    (replace with the Windows PC's local IP)
+# 4. Install background services
+bash platform/macos/install_service.sh       # macOS
+sudo bash platform/linux/install_service.sh  # Linux
+# Windows: right-click platform\windows\install_service.bat → Run as administrator
 ```
 
 ---
@@ -220,8 +211,8 @@ http://192.168.1.4:8000    (replace with the Windows PC's local IP)
 4. `dumpsys activity top` — top activity
 5. `dumpsys SurfaceFlinger` — Amazon custom builds
 
-If all fail, run `python diagnose.py` — it prints the raw ADB output so new
-regex patterns can be added.
+If all fail, run `python diagnose.py` — it prints raw ADB output so new regex patterns
+can be added to `get_foreground_app()`.
 
 ---
 
@@ -250,20 +241,8 @@ regex patterns can be added.
 | DB | SQLite | `data/confiretvmonitor.db`, gitignored |
 | Backend | FastAPI + Jinja2 | port 8000 |
 | Frontend | HTML + Chart.js | dark mobile-friendly UI, no build step |
-| Notifications | Gmail SMTP + ntfy.sh | ntfy topic: `confiretvmonitor-dhruv` |
-| Scheduler | APScheduler | timezone: Asia/Kolkata |
+| Notifications | Gmail SMTP + ntfy.sh | configure topic in `config.yaml` |
+| Scheduler | APScheduler | timezone: configurable (default Asia/Kolkata) |
 | Services (Win) | NSSM | 3 services: Poller, Web, Scheduler |
 | Services (Mac) | LaunchAgent | `platform/macos/` |
 | Services (Linux) | systemd | `platform/linux/` |
-
----
-
-## Development Notes
-
-- The project is developed on macOS, deployed on Windows. When writing or editing
-  `.bat` files, ALWAYS use the Python binary-write approach with CRLF endings.
-  Never use a Mac text editor to save `.bat` files directly.
-- `config.yaml` is gitignored. Real credentials are never committed.
-- The `data/` directory (SQLite DB) and `logs/` directory are gitignored.
-- `venv/` is gitignored.
-- Timezone throughout: `Asia/Kolkata` (IST, UTC+5:30).

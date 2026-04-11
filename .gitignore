@@ -6,6 +6,7 @@ config.yaml
 # Runtime data
 data/
 logs/
+install_output.txt
 
 # Generated macOS LaunchAgent plists (contain absolute paths)
 platform/macos/launchd/

@@ -78,10 +78,10 @@ notepad config.yaml
 Edit at minimum:
 ```yaml
 firetv:
-  ip: "192.168.1.15"    # ← your Fire TV IP
+  ip: "192.168.1.100"   # ← your Fire TV IP
 
 child:
-  name: "Dhruv"
+  name: "Arjun"
   daily_limit_minutes: 120
 ```
 
@@ -285,11 +285,11 @@ Bookmark this URL on your phone. Works on any browser — Chrome, Safari, Firefo
 1. Install the **ntfy** app:
    - Android: [Play Store](https://play.google.com/store/apps/details?id=io.heckel.ntfy)
    - iOS: [App Store](https://apps.apple.com/app/ntfy/id1625396347)
-2. Choose a unique topic name (e.g. `confiretvmonitor-dhruv-2024`)
+2. Choose a unique topic name (e.g. `confiretvmonitor-yourname-2024`)
 3. Add to `config.yaml`:
    ```yaml
    notifications:
-     ntfy_topic: "confiretvmonitor-dhruv-2024"
+     ntfy_topic: "confiretvmonitor-yourname-2024"
    ```
 4. In the ntfy app: tap **+** → enter the same topic name → Subscribe
 

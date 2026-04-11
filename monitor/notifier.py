@@ -10,6 +10,7 @@ import logging
 import smtplib
 import urllib.request
 import urllib.parse
+import urllib.error
 from datetime import date, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -39,7 +40,9 @@ def send_push(cfg: dict, title: str, message: str, priority: str = "default"):
             url,
             data=data,
             headers={
-                "Title": title,
+                # ntfy accepts percent-encoded UTF-8 in headers; avoids latin-1 errors
+                # for characters like em-dash that urllib would otherwise reject.
+                "Title": urllib.parse.quote(title, safe=" ,!?()-_:."),
                 "Priority": priority,
                 "Tags": "tv,child",
             },
@@ -227,7 +230,7 @@ def _render_daily_email(
         <tbody>{rows_html}</tbody>
       </table>
       <p style="color:#aaa;font-size:11px;margin-top:24px;">
-        Sent by ConFireTV · Bangalore, India
+        Sent by ConFireTV
       </p>
     </body></html>
     """
@@ -249,6 +252,6 @@ def _render_alert_email(
         <li>Daily limit: <strong>{limit_min} min</strong></li>
       </ul>
       <p>The app has been automatically stopped.</p>
-      <p style="color:#aaa;font-size:11px;">Sent by ConFireTV · Bangalore, India</p>
+      <p style="color:#aaa;font-size:11px;">Sent by ConFireTV</p>
     </body></html>
     """

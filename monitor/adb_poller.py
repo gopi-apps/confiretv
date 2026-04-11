@@ -355,8 +355,9 @@ class Poller:
         self.current_package: Optional[str] = None
         self._connect_failures: int = 0   # consecutive failures before triggering discovery
 
-        # Track which apps have already triggered an alert today
+        # Track which apps have already triggered an alert or force-stop today
         self.alerted_today: set = set()
+        self.stopped_today: set = set()
         self.last_alert_date = None
 
     def _app_limits(self) -> dict:
@@ -370,6 +371,7 @@ class Poller:
         today = datetime.now().date()
         if self.last_alert_date != today:
             self.alerted_today.clear()
+            self.stopped_today.clear()
             self.last_alert_date = today
 
     def _check_limits(self, totals: dict):
@@ -384,9 +386,11 @@ class Poller:
             limit_s = limits[app_key] * 60
             pct = (total_s / limit_s) * 100
 
-            # Hard limit exceeded — force stop
+            # Hard limit exceeded — force stop once per app per day
             if total_s >= limit_s:
-                if self.current_app_key == app_key:
+                stop_key = f"{app_key}_{datetime.now().date()}"
+                if self.current_app_key == app_key and stop_key not in self.stopped_today:
+                    self.stopped_today.add(stop_key)
                     log.warning(
                         "%s exceeded daily limit for %s (%d min). Stopping.",
                         self.child_name, app_key, limits[app_key]
@@ -414,14 +418,17 @@ class Poller:
                     exceeded=False,
                 )
 
-        # Check total daily limit
+        # Check total daily limit — enforce once per day
         total_all_s = sum(
             s for k, s in totals.items()
             if k != "firetv_home"
         )
         total_limit_s = self.daily_limit_min * 60
+        total_stop_key = f"total_{datetime.now().date()}"
         if total_limit_s > 0 and total_all_s >= total_limit_s:
-            if self.current_app_key and self.current_app_key != "firetv_home":
+            if (self.current_app_key and self.current_app_key != "firetv_home"
+                    and total_stop_key not in self.stopped_today):
+                self.stopped_today.add(total_stop_key)
                 log.warning(
                     "%s exceeded total daily limit (%d min). Stopping current app.",
                     self.child_name, self.daily_limit_min
@@ -519,6 +526,14 @@ class Poller:
                 package = get_foreground_app(self.ip, self.port)
                 if package is None:
                     log.warning("Could not get foreground app (TV off or ADB issue?)")
+                    # Close the active session immediately so disconnection time
+                    # (TV off, IP change, network blip) is never counted as watch time.
+                    if self.current_session_id is not None:
+                        db.close_session(self.current_session_id, datetime.now())
+                        log.info("Session closed (connection lost): %s", self.current_app_key)
+                        self.current_session_id = None
+                        self.current_app_key = None
+                        self.current_package = None
                     connected = False
                 else:
                     self._handle_app_switch(package)

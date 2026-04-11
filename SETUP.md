@@ -107,10 +107,18 @@ This verifies the connection end-to-end and auto-detects correct package names.
 
 Right-click `platform\windows\install_service.bat` → **Run as administrator**
 
-This installs three Windows Services that start automatically at boot:
+The batch file is a thin launcher — it calls `platform\windows\install.py`, which handles
+the full installation in Python (avoiding cmd.exe batch parsing limitations).
+
+It installs three Windows Services that start automatically at boot:
 - `ConFireTV-Poller` — ADB monitoring daemon
 - `ConFireTV-Web` — web dashboard on port 8000
 - `ConFireTV-Scheduler` — daily report emails + bedtime
+
+The installer also:
+- Auto-detects `adb.exe` and injects its path into each service's environment
+- Adds a Windows Firewall rule for port 8000
+- Removes any pre-existing ConFireTV services before reinstalling
 
 **7. Verify**
 
@@ -362,6 +370,8 @@ Run `python diagnose.py` or: `adb -s <IP>:5555 shell pm list packages | grep -i 
 - Ensure `venv` is created and `pip install -r requirements.txt` completed
 - Check `config.yaml` exists (not just `config.yaml.example`)
 - Run `venv\Scripts\python diagnose.py` to verify ADB works
+- If you moved `adb.exe` after installing, re-run `install_service.bat` as Administrator —
+  it re-detects `adb.exe` and updates the service environment automatically
 
 ### Dashboard not reachable from phone
 

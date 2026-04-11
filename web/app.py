@@ -72,7 +72,19 @@ def _app_info(cfg: dict) -> dict:
 
 
 def _adb(ip: str, port: int, *args) -> Optional[str]:
-    cmd = ["adb", "-s", f"{ip}:{port}"] + list(args)
+    import shutil, platform as _platform
+    binary = shutil.which("adb")
+    if not binary and _platform.system() == "Windows":
+        for candidate in [
+            r"C:\platform-tools\adb.exe",
+            os.path.expanduser(r"~\AppData\Local\Android\Sdk\platform-tools\adb.exe"),
+        ]:
+            if os.path.isfile(candidate):
+                binary = candidate
+                break
+    if not binary:
+        return None
+    cmd = [binary, "-s", f"{ip}:{port}"] + list(args)
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         return r.stdout.strip() if r.returncode == 0 else None
@@ -299,24 +311,56 @@ async def set_app_limit(request: Request):
 
 @app.get("/api/service-status")
 async def get_service_status():
-    """Check if the three background services are running via launchctl."""
-    services = ["poller", "web", "scheduler"]
+    """Check if the three background services are running."""
+    import platform as _platform
     result = {}
-    for svc in services:
-        label = f"com.confiretvmonitor.{svc}"
-        try:
-            r = subprocess.run(
-                ["launchctl", "list", label],
-                capture_output=True, text=True, timeout=5
-            )
-            if r.returncode == 0 and '"PID"' in r.stdout:
-                import re as _re
-                pid_match = _re.search(r'"PID"\s*=\s*(\d+)', r.stdout)
-                result[svc] = {"running": True, "pid": int(pid_match.group(1)) if pid_match else None}
-            else:
+
+    if _platform.system() == "Windows":
+        # Map dashboard key → Windows service name (installed by NSSM)
+        win_services = {
+            "poller": "ConFireTV-Poller",
+            "web": "ConFireTV-Web",
+            "scheduler": "ConFireTV-Scheduler",
+        }
+        for svc_key, svc_name in win_services.items():
+            try:
+                r = subprocess.run(
+                    ["sc", "query", svc_name],
+                    capture_output=True, text=True, timeout=5
+                )
+                running = r.returncode == 0 and "RUNNING" in r.stdout
+                result[svc_key] = {"running": running, "pid": None}
+            except Exception:
+                result[svc_key] = {"running": False, "pid": None}
+    elif _platform.system() == "Linux":
+        for svc in ["poller", "web", "scheduler"]:
+            unit = f"confiretvmonitor-{svc}"
+            try:
+                r = subprocess.run(
+                    ["systemctl", "is-active", unit],
+                    capture_output=True, text=True, timeout=5
+                )
+                result[svc] = {"running": r.stdout.strip() == "active", "pid": None}
+            except Exception:
                 result[svc] = {"running": False, "pid": None}
-        except Exception:
-            result[svc] = {"running": False, "pid": None}
+    else:
+        # macOS: LaunchAgent labels
+        import re as _re
+        for svc in ["poller", "web", "scheduler"]:
+            label = f"com.confiretvmonitor.{svc}"
+            try:
+                r = subprocess.run(
+                    ["launchctl", "list", label],
+                    capture_output=True, text=True, timeout=5
+                )
+                if r.returncode == 0 and '"PID"' in r.stdout:
+                    pid_match = _re.search(r'"PID"\s*=\s*(\d+)', r.stdout)
+                    result[svc] = {"running": True, "pid": int(pid_match.group(1)) if pid_match else None}
+                else:
+                    result[svc] = {"running": False, "pid": None}
+            except Exception:
+                result[svc] = {"running": False, "pid": None}
+
     return result
 
 

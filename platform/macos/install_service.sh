@@ -5,11 +5,12 @@
 
 set -e
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VENV_PYTHON="$PROJECT_DIR/venv/bin/python"
 VENV_UVICORN="$PROJECT_DIR/venv/bin/uvicorn"
 LOGS_DIR="$PROJECT_DIR/logs"
-LAUNCHD_DIR="$PROJECT_DIR/launchd"
+LAUNCHD_DIR="$SCRIPT_DIR/launchd"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 
 BOLD="\033[1m"; GREEN="\033[92m"; RED="\033[91m"; YELLOW="\033[93m"; RESET="\033[0m"

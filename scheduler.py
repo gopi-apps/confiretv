@@ -71,8 +71,16 @@ def job_bedtime_enforce():
 
     log.info("Bedtime: stopping %s on %s:%d", package, ip, port)
     try:
+        import shutil as _shutil, platform as _platform
+        _adb_bin = _shutil.which("adb")
+        if not _adb_bin and _platform.system() == "Windows":
+            for _c in [r"C:\platform-tools\adb.exe"]:
+                if os.path.isfile(_c):
+                    _adb_bin = _c
+                    break
+        _adb_bin = _adb_bin or "adb"
         subprocess.run(
-            ["adb", "-s", f"{ip}:{port}", "shell", "am", "force-stop", package],
+            [_adb_bin, "-s", f"{ip}:{port}", "shell", "am", "force-stop", package],
             timeout=10, capture_output=True
         )
         db.close_session(active["id"], datetime.now())

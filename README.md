@@ -213,7 +213,7 @@ Add the result to `config.yaml` under `app_packages`.
 | ADB | Android Platform Tools ([download](https://developer.android.com/studio/releases/platform-tools)) |
 | Fire TV | Any Fire TV Stick or Fire TV Cube with ADB Debugging enabled |
 | Network | Server and Fire TV must be on the same WiFi/LAN |
-| Windows service | [NSSM](https://nssm.cc/download) (for `install_service.bat`) |
+| Windows service | [NSSM](https://nssm.cc/download) — `install_service.bat` installs it via `install.py` |
 
 ---
 
@@ -263,14 +263,10 @@ python manage.py logs poller
 
 **Windows-specific fix — service can't find adb.exe:**
 
-Windows Services run as the SYSTEM account which has a minimal PATH — it won't find `adb.exe` even if it works in your terminal. Run this once in an **Administrator Command Prompt**, then restart the service:
-
-```batch
-nssm set ConFireTV-Poller AppEnvironmentExtra "PATH=C:\platform-tools;C:\Windows\System32"
-nssm restart ConFireTV-Poller
-```
-
-> Replace `C:\platform-tools` with wherever you extracted Android Platform Tools if different.
+Windows Services run as the SYSTEM account with a minimal PATH — `adb.exe` won't be found
+even if it works in your terminal. The installer (`install_service.bat`) auto-detects `adb.exe`
+and injects its directory into each service's environment. If you moved `adb.exe` after
+installing, simply re-run `install_service.bat` as Administrator to fix it.
 
 ---
 

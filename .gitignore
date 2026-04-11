@@ -3,6 +3,9 @@
 # User config — contains credentials, never commit
 config.yaml
 
+# Personal Claude Code overlay (use CLAUDE.local.md for private session notes)
+CLAUDE.local.md
+
 # Runtime data
 data/
 logs/

@@ -357,8 +357,11 @@ class Poller:
 
         # Track which apps have already triggered an alert or force-stop today
         self.alerted_today: set = set()
-        self.stopped_today: set = set()
+        # {app_key: datetime} — last time each app was force-stopped; reset at midnight
+        self.last_stopped: dict = {}
         self.last_alert_date = None
+        # Cooldown between repeated force-stops for the same over-limit app (minutes)
+        self._stop_cooldown_min: int = 10
 
     def _app_limits(self) -> dict:
         """Merge config limits with DB overrides. Returns {app_key: minutes}."""
@@ -367,11 +370,18 @@ class Poller:
         limits.update(db_limits)
         return limits
 
+    def _total_daily_limit_min(self) -> int:
+        """Read total daily limit fresh from config.yaml so UI changes take effect without restart."""
+        try:
+            return load_config()["child"]["daily_limit_minutes"]
+        except Exception:
+            return self.daily_limit_min
+
     def _reset_daily_alerts_if_needed(self):
         today = datetime.now().date()
         if self.last_alert_date != today:
             self.alerted_today.clear()
-            self.stopped_today.clear()
+            self.last_stopped.clear()
             self.last_alert_date = today
 
     def _check_limits(self, totals: dict):
@@ -386,23 +396,31 @@ class Poller:
             limit_s = limits[app_key] * 60
             pct = (total_s / limit_s) * 100
 
-            # Hard limit exceeded — force stop once per app per day
-            if total_s >= limit_s:
-                stop_key = f"{app_key}_{datetime.now().date()}"
-                if self.current_app_key == app_key and stop_key not in self.stopped_today:
-                    self.stopped_today.add(stop_key)
-                    log.warning(
-                        "%s exceeded daily limit for %s (%d min). Stopping.",
-                        self.child_name, app_key, limits[app_key]
-                    )
-                    force_stop_app(self.ip, self.port, self.current_package)
-                    send_limit_alert(
-                        self.cfg,
-                        app_key=app_key,
-                        used_min=total_s // 60,
-                        limit_min=limits[app_key],
-                        exceeded=True,
-                    )
+            # Kill one poll interval early so the app is stopped before the quota
+            # is actually reached (total can overshoot by ADB latency only, ~1-2 s).
+            if total_s >= limit_s - self.poll_interval:
+                if self.current_app_key == app_key:
+                    now = datetime.now()
+                    last_stop = self.last_stopped.get(app_key)
+                    cooldown_s = self._stop_cooldown_min * 60
+                    if last_stop is None or (now - last_stop).total_seconds() >= cooldown_s:
+                        self.last_stopped[app_key] = now
+                        log.warning(
+                            "%s exceeded daily limit for %s (%d min). Stopping.",
+                            self.child_name, app_key, limits[app_key]
+                        )
+                        force_stop_app(self.ip, self.port, self.current_package)
+                        # Only send a notification the first time per day (not every cooldown)
+                        alert_key = f"{app_key}_exceeded_{datetime.now().date()}"
+                        if alert_key not in self.alerted_today:
+                            self.alerted_today.add(alert_key)
+                            send_limit_alert(
+                                self.cfg,
+                                app_key=app_key,
+                                used_min=total_s // 60,
+                                limit_min=limits[app_key],
+                                exceeded=True,
+                            )
                 continue
 
             # Approaching limit — alert once
@@ -423,24 +441,31 @@ class Poller:
             s for k, s in totals.items()
             if k != "firetv_home"
         )
-        total_limit_s = self.daily_limit_min * 60
-        total_stop_key = f"total_{datetime.now().date()}"
-        if total_limit_s > 0 and total_all_s >= total_limit_s:
-            if (self.current_app_key and self.current_app_key != "firetv_home"
-                    and total_stop_key not in self.stopped_today):
-                self.stopped_today.add(total_stop_key)
-                log.warning(
-                    "%s exceeded total daily limit (%d min). Stopping current app.",
-                    self.child_name, self.daily_limit_min
-                )
-                force_stop_app(self.ip, self.port, self.current_package)
-                send_limit_alert(
-                    self.cfg,
-                    app_key="total",
-                    used_min=total_all_s // 60,
-                    limit_min=self.daily_limit_min,
-                    exceeded=True,
-                )
+        # Read fresh from config so UI changes (Settings tab) take effect without restart
+        total_limit_min = self._total_daily_limit_min()
+        total_limit_s = total_limit_min * 60
+        if total_limit_s > 0 and total_all_s >= total_limit_s - self.poll_interval:
+            if self.current_app_key and self.current_app_key != "firetv_home":
+                now = datetime.now()
+                last_stop = self.last_stopped.get("total")
+                cooldown_s = self._stop_cooldown_min * 60
+                if last_stop is None or (now - last_stop).total_seconds() >= cooldown_s:
+                    self.last_stopped["total"] = now
+                    log.warning(
+                        "%s exceeded total daily limit (%d min). Stopping current app.",
+                        self.child_name, total_limit_min
+                    )
+                    force_stop_app(self.ip, self.port, self.current_package)
+                    total_alert_key = f"total_exceeded_{now.date()}"
+                    if total_alert_key not in self.alerted_today:
+                        self.alerted_today.add(total_alert_key)
+                        send_limit_alert(
+                            self.cfg,
+                            app_key="total",
+                            used_min=total_all_s // 60,
+                            limit_min=total_limit_min,
+                            exceeded=True,
+                        )
 
     def _handle_app_switch(self, new_package: Optional[str]):
         now = datetime.now()
